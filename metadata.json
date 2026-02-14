@@ -1,0 +1,7 @@
+{
+  "name": "GestorPro Business",
+  "description": "Sistema integral de gestión de ventas, inventario y cuentas por cobrar/pagar con soporte multimoneda.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

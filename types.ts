@@ -1,0 +1,110 @@
+
+export enum AppTab {
+  DASHBOARD = 'dashboard',
+  INVENTORY = 'inventory',
+  SALES = 'sales',
+  PURCHASES = 'purchases',
+  CUSTOMERS = 'customers',
+  SUPPLIERS = 'suppliers',
+  CXC = 'cxc',
+  CXP = 'cxp',
+  REPORTS = 'reports',
+  SETTINGS = 'settings'
+}
+
+export interface CompanyInfo {
+  name: string;
+  rif: string;
+  address: string;
+  phone: string;
+  logo?: string;
+  ownerName?: string;
+  email?: string;
+  bank?: string;
+  mobilePhone?: string;
+  dni?: string;
+  slogan?: string;
+}
+
+export interface AppSettings {
+  exchangeRate: number;
+  lastRateUpdate: string;
+  darkMode: boolean;
+  showLogoOnTicket: boolean;
+  showIvaOnTicket: boolean;
+  includeQr: boolean;
+  ticketHeader?: string;
+  ticketFooter?: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  priceUSD: number;
+  costUSD: number;
+  stock: number;
+  minStock: number;
+  mermaTotal?: number;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  rif: string;
+  phone: string;
+  email: string;
+  address?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  rif: string;
+  phone: string;
+}
+
+export interface SaleItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  priceUSD: number;
+}
+
+export interface Sale {
+  id: string;
+  date: string;
+  customerId: string;
+  customerName: string;
+  customerAddress?: string;
+  items: SaleItem[];
+  totalUSD: number;
+  totalBS: number;
+  exchangeRate: number;
+  status: 'paid' | 'pending';
+  discountUSD?: number;
+  initialPaymentUSD?: number;
+  paidAmountUSD?: number;
+}
+
+export interface PurchaseItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  costUSD: number;
+}
+
+export interface Purchase {
+  id: string;
+  date: string;
+  supplierId: string;
+  supplierName: string;
+  items: PurchaseItem[];
+  totalUSD: number;
+  totalBS: number;
+  exchangeRate: number;
+  status: 'paid' | 'pending';
+  discountUSD?: number;
+  initialPaymentUSD?: number;
+  paidAmountUSD?: number;
+}
