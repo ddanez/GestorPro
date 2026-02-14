@@ -1,120 +1,67 @@
 
-const DB_NAME = 'DDanezGestorProDB';
-const DB_VERSION = 1;
+// db.ts - Versión Cliente para Servidor Termux
+// Si la app se sirve desde el mismo puerto que la API, usamos rutas relativas
+const isSameHost = window.location.port === '3001' || window.location.port === '';
+const API_BASE_URL = isSameHost ? '/api' : `http://${window.location.hostname}:3001/api`;
 
 export class DBService {
-  private db: IDBDatabase | null = null;
-
-  async init(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve(request.result);
-      };
-      request.onupgradeneeded = (event: any) => {
-        const db = event.target.result;
-        ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'].forEach(store => {
-          if (!db.objectStoreNames.contains(store)) {
-            db.createObjectStore(store, { keyPath: 'id' });
-          }
-        });
-      };
-    });
+  private async request(endpoint: string, options: RequestInit = {}) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Error en la petición');
+      }
+      return response.json();
+    } catch (err) {
+      console.error("Error en DBService:", err);
+      throw err;
+    }
   }
 
-  private async getStore(name: string, mode: IDBTransactionMode = 'readonly'): Promise<IDBObjectStore> {
-    if (!this.db) await this.init();
-    return this.db!.transaction(name, mode).objectStore(name);
+  async init(): Promise<void> {
+    console.log("Conectado al servidor de datos en Termux mediante:", API_BASE_URL);
   }
 
   async getAll<T>(storeName: string): Promise<T[]> {
-    const store = await this.getStore(storeName);
-    return new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    return this.request(`/${storeName}`);
   }
 
   async put<T>(storeName: string, item: T): Promise<void> {
-    const store = await this.getStore(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const request = store.put(item);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+    return this.request(`/${storeName}`, {
+      method: 'POST',
+      body: JSON.stringify(item),
     });
   }
 
   async delete(storeName: string, id: string): Promise<void> {
-    const store = await this.getStore(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const request = store.delete(id);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+    return this.request(`/${storeName}/${id}`, {
+      method: 'DELETE',
     });
   }
 
   async clearAllData(): Promise<void> {
-    try {
-      if (!this.db) await this.init();
-      if (this.db) {
-        const storeNames = Array.from(this.db.objectStoreNames);
-        if (storeNames.length > 0) {
-          const transaction = this.db.transaction(storeNames, 'readwrite');
-          storeNames.forEach(name => {
-            transaction.objectStore(name).clear();
-          });
-          await new Promise<void>((resolve, reject) => {
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-          });
-        }
-        this.db.close();
-        this.db = null;
-      }
-      return new Promise((resolve) => {
-        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-        deleteRequest.onsuccess = () => resolve();
-        deleteRequest.onerror = () => resolve();
-        deleteRequest.onblocked = () => resolve();
-      });
-    } catch (error) {
-      console.error("Error clearing DB:", error);
-    }
+    return this.request('/system/reset', {
+      method: 'POST',
+    });
   }
 
   async exportBackup(): Promise<string> {
-    if (!this.db) await this.init();
-    const backup: any = {};
-    const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
-    
-    for (const storeName of stores) {
-      backup[storeName] = await this.getAll(storeName);
-    }
-    
-    return JSON.stringify(backup);
+    const data = await this.request('/system/backup');
+    return JSON.stringify(data);
   }
 
   async importBackup(jsonString: string): Promise<void> {
-    try {
-      const data = JSON.parse(jsonString);
-      if (!this.db) await this.init();
-      
-      const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
-      
-      for (const storeName of stores) {
-        if (data[storeName]) {
-          const store = await this.getStore(storeName, 'readwrite');
-          for (const item of data[storeName]) {
-            store.put(item);
-          }
-        }
-      }
-    } catch (error) {
-      throw new Error("El archivo de respaldo no es válido.");
-    }
+    return this.request('/system/restore', {
+      method: 'POST',
+      body: jsonString,
+    });
   }
 }
 

@@ -48,6 +48,9 @@ const App: React.FC = () => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
 
   const loadData = useCallback(async () => {
+    // Si el sistema está bloqueado por reinicio, no hacer nada
+    if (localStorage.getItem('SYSTEM_DB_TERMINATED')) return;
+
     try {
       await dbService.init();
       const [p, c, s, sa, pu, st] = await Promise.all([
