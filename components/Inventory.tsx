@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, AlertTriangle, Box, MinusCircle } from 'lucide-react';
+import { Plus, Search, Edit2, Tag, Box, AlertTriangle, Layers } from 'lucide-react';
 import { Product, AppSettings } from '../types';
 import { dbService } from '../db';
 
@@ -10,32 +10,32 @@ interface Props {
   settings: AppSettings;
 }
 
+const CATEGORIES = ['Víveres', 'Charcutería', 'Lácteos', 'Limpieza', 'Bebidas', 'Snacks', 'Otros'];
+
 const Inventory: React.FC<Props> = ({ products, setProducts, settings }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [mermaVal, setMermaVal] = useState(0);
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+    p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.category?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const saveProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const currentStock = parseFloat(formData.get('stock') as string) || 0;
-    const finalStock = currentStock - mermaVal;
     
     const newProduct: Product = {
       id: editingProduct?.id || crypto.randomUUID(),
       name: formData.get('name') as string,
       sku: formData.get('sku') as string,
+      category: formData.get('category') as string || 'Otros',
       priceUSD: parseFloat(formData.get('priceUSD') as string) || 0,
       costUSD: parseFloat(formData.get('costUSD') as string) || 0,
-      stock: finalStock,
+      stock: parseFloat(formData.get('stock') as string) || 0,
       minStock: parseFloat(formData.get('minStock') as string) || 0,
-      mermaTotal: (editingProduct?.mermaTotal || 0) + mermaVal
     };
 
     await dbService.put('products', newProduct);
@@ -44,7 +44,6 @@ const Inventory: React.FC<Props> = ({ products, setProducts, settings }) => {
       return [...filtered, newProduct].sort((a,b) => a.name.localeCompare(b.name));
     });
     setIsModalOpen(false);
-    setMermaVal(0);
   };
 
   return (
@@ -53,8 +52,8 @@ const Inventory: React.FC<Props> = ({ products, setProducts, settings }) => {
         <div className="relative flex-1 group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-orange-500 transition-colors" size={18} />
           <input 
-            type="text" placeholder="Buscar producto o SKU..." 
-            className="w-full bg-[#1e293b] border border-slate-700 rounded-2xl py-3 pl-12 pr-4 text-xs focus:ring-2 focus:ring-orange-500/50 outline-none font-bold transition-all"
+            type="text" placeholder="Producto, SKU o Categoría..." 
+            className="w-full bg-[#1e293b] border border-slate-700 rounded-2xl py-3 pl-12 pr-4 text-xs focus:ring-2 focus:ring-orange-500/50 outline-none font-bold transition-all text-white"
             value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
@@ -78,8 +77,11 @@ const Inventory: React.FC<Props> = ({ products, setProducts, settings }) => {
               {filteredProducts.map(p => (
                 <tr key={p.id} onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="hover:bg-slate-800/40 cursor-pointer transition-colors group">
                   <td className="px-5 py-3">
-                    <p className="font-bold text-xs text-white leading-tight">{p.name}</p>
-                    <p className="text-[8px] text-slate-500 font-bold uppercase">{p.sku}</p>
+                    <p className="font-bold text-xs text-white leading-tight uppercase">{p.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[7px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-black tracking-widest uppercase">{p.sku}</span>
+                      <span className="text-[7px] text-orange-400 font-bold uppercase">{p.category || 'Otros'}</span>
+                    </div>
                   </td>
                   <td className="px-5 py-3 text-center">
                     <span className={`px-3 py-1 rounded-lg text-[9px] font-black inline-block ${p.stock <= p.minStock ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
@@ -103,32 +105,42 @@ const Inventory: React.FC<Props> = ({ products, setProducts, settings }) => {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[150] flex items-center justify-center p-4">
           <div className="bg-[#1e293b] w-full max-w-lg rounded-[2.5rem] p-8 border border-slate-700 animate-in zoom-in-95">
-            <h2 className="text-xl font-black mb-6 uppercase tracking-tighter text-orange-500">{editingProduct ? 'Editar' : 'Nuevo'} Producto</h2>
+            <h2 className="text-xl font-black mb-6 uppercase tracking-tighter text-orange-500 flex items-center gap-2">
+              <Box size={24} /> {editingProduct ? 'Editar' : 'Nuevo'} Producto
+            </h2>
             <form onSubmit={saveProduct} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Descripción</label>
-                <input name="name" defaultValue={editingProduct?.name} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none" required />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Descripción</label>
+                  <input name="name" defaultValue={editingProduct?.name} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-orange-500" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Categoría</label>
+                  <select name="category" defaultValue={editingProduct?.category || 'Otros'} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-orange-500">
+                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                   <label className="text-[9px] font-black text-slate-500 uppercase ml-2">SKU</label>
-                   <input name="sku" defaultValue={editingProduct?.sku} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none" required />
+                   <label className="text-[9px] font-black text-slate-500 uppercase ml-2">SKU / Código</label>
+                   <input name="sku" defaultValue={editingProduct?.sku} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-orange-500" required />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-500 uppercase ml-2">PVP ($)</label>
-                  <input name="priceUSD" type="number" step="0.01" defaultValue={editingProduct?.priceUSD} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-black text-emerald-500 outline-none" required />
+                  <input name="priceUSD" type="number" step="0.01" defaultValue={editingProduct?.priceUSD} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-black text-emerald-400 outline-none focus:border-orange-500" required />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Stock</label>
-                  <input name="stock" type="number" step="any" defaultValue={editingProduct?.stock || 0} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none" required />
+                  <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Existencia</label>
+                  <input name="stock" type="number" step="any" defaultValue={editingProduct?.stock || 0} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-orange-500" required />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-500 uppercase ml-2">Costo ($)</label>
-                  <input name="costUSD" type="number" step="0.01" defaultValue={editingProduct?.costUSD} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none" required />
+                  <input name="costUSD" type="number" step="0.01" defaultValue={editingProduct?.costUSD} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-orange-500" required />
                 </div>
               </div>
 

@@ -1,44 +1,43 @@
+import express from 'express';
+import sqlite3Lib from 'sqlite3';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
+// Configuración de rutas para ES Modules (__dirname no existe por defecto)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const sqlite3 = sqlite3Lib.verbose();
 const app = express();
 const PORT = 3001;
-// En Termux, la base de datos se guardará en la misma carpeta del proyecto
 const DB_PATH = path.join(__dirname, 'database.sqlite');
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 1. Prioridad: Servir la app web compilada (Carpeta dist)
+// Servir la carpeta de producción (dist) si existe
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
-    console.log("✅ Carpeta 'dist' detectada. Sirviendo interfaz web.");
-} else {
-    console.warn("⚠️ Advertencia: No se encontró la carpeta 'dist'. ¿Olvidaste ejecutar 'npm run build'?");
 }
 
-// 2. Conexión a Base de Datos SQLite
+// Conexión a Base de Datos SQLite
 const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
-    console.error('❌ Error fatal al abrir base de datos:', err);
-    process.exit(1);
+    console.error('❌ Error al abrir la base de datos:', err);
+  } else {
+    console.log('🗄️ Base de datos SQLite conectada correctamente');
   }
-  else console.log('🗄️  SQLite activo en:', DB_PATH);
 });
 
-// Inicialización de Tablas
+// Inicialización de Tablas (Asegura que todas existan, incluyendo sellers)
 db.serialize(() => {
-  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
+  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings', 'sellers'];
   stores.forEach(store => {
-    db.run(`CREATE TABLE IF NOT EXISTS ${store} (id TEXT PRIMARY KEY, data TEXT)`, (err) => {
-        if(err) console.error(`Error creando tabla ${store}:`, err);
-    });
+    db.run(`CREATE TABLE IF NOT EXISTS ${store} (id TEXT PRIMARY KEY, data TEXT)`);
   });
 });
 
@@ -46,9 +45,6 @@ db.serialize(() => {
 
 app.get('/api/:store', (req, res) => {
   const { store } = req.params;
-  const validStores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
-  if (!validStores.includes(store)) return res.status(400).json({ message: 'Almacén no válido' });
-
   db.all(`SELECT data FROM ${store}`, [], (err, rows) => {
     if (err) return res.status(500).json({ message: err.message });
     res.json(rows.map(row => JSON.parse(row.data)));
@@ -58,11 +54,13 @@ app.get('/api/:store', (req, res) => {
 app.post('/api/:store', (req, res) => {
   const { store } = req.params;
   const item = req.body;
-  if (!item.id) return res.status(400).json({ message: 'El objeto debe tener un ID' });
+  if (!item.id) return res.status(400).json({ message: 'El campo ID es obligatorio' });
   
-  const data = JSON.stringify(item);
-  db.run(`INSERT OR REPLACE INTO ${store} (id, data) VALUES (?, ?)`, [item.id, data], (err) => {
-    if (err) return res.status(500).json({ message: err.message });
+  db.run(`INSERT OR REPLACE INTO ${store} (id, data) VALUES (?, ?)`, [item.id, JSON.stringify(item)], (err) => {
+    if (err) {
+      console.error(`Error al guardar en ${store}:`, err);
+      return res.status(500).json({ message: err.message });
+    }
     res.json({ success: true });
   });
 });
@@ -78,19 +76,19 @@ app.delete('/api/:store/:id', (req, res) => {
 // --- SYSTEM ROUTES ---
 
 app.post('/api/system/reset', (req, res) => {
-  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
+  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings', 'sellers'];
   db.serialize(() => {
     db.run('BEGIN TRANSACTION');
     stores.forEach(store => db.run(`DELETE FROM ${store}`));
     db.run('COMMIT', (err) => {
         if (err) return res.status(500).json({ message: err.message });
-        res.json({ success: true, message: "Base de datos vaciada con éxito" });
+        res.json({ success: true });
     });
   });
 });
 
 app.get('/api/system/backup', async (req, res) => {
-  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings'];
+  const stores = ['products', 'customers', 'suppliers', 'sales', 'purchases', 'settings', 'sellers'];
   const backup = {};
   try {
     for (const store of stores) {
@@ -107,24 +105,43 @@ app.get('/api/system/backup', async (req, res) => {
   }
 });
 
-// Manejar navegación de React (Single Page Application)
+app.post('/api/system/restore', (req, res) => {
+  const backupData = req.body;
+  const stores = Object.keys(backupData);
+  
+  db.serialize(() => {
+    db.run('BEGIN TRANSACTION');
+    try {
+      stores.forEach(store => {
+        db.run(`DELETE FROM ${store}`);
+        if (backupData[store]) {
+          backupData[store].forEach(item => {
+            db.run(`INSERT INTO ${store} (id, data) VALUES (?, ?)`, [item.id, JSON.stringify(item)]);
+          });
+        }
+      });
+      db.run('COMMIT');
+      res.json({ success: true });
+    } catch (err) {
+      db.run('ROLLBACK');
+      res.status(500).json({ message: err.message });
+    }
+  });
+});
+
+// Redirección para Single Page Application (React)
 app.get('*', (req, res) => {
-  const indexFile = path.join(__dirname, 'dist', 'index.html');
+  const indexFile = path.join(distPath, 'index.html');
   if (fs.existsSync(indexFile)) {
     res.sendFile(indexFile);
   } else {
-    res.status(404).send("Error: Interfaz no compilada. Ejecuta 'npm run build' en la terminal.");
+    res.status(404).send('Frontend no encontrado. Asegúrate de ejecutar: npm run build');
   }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-  🚀 SISTEMA INICIADO CORRECTAMENTE
-  ----------------------------------------------
-  Puerto local:  3001
-  Acceso local:  http://localhost:${PORT}
-  Acceso WiFi:   Usa la IP de tu celular con :${PORT}
-  ----------------------------------------------
-  Presiona Ctrl+C para apagar.
-  `);
+  console.log(`\n🚀 SERVIDOR GESTORPRO INICIADO`);
+  console.log(`🌐 Local: http://localhost:${PORT}`);
+  console.log(`📡 Red: http://0.0.0.0:${PORT}`);
+  console.log(`📝 Modo: ES Modules (Node v25+)`);
 });

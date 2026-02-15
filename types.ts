@@ -6,6 +6,7 @@ export enum AppTab {
   PURCHASES = 'purchases',
   CUSTOMERS = 'customers',
   SUPPLIERS = 'suppliers',
+  SELLERS = 'sellers',
   CXC = 'cxc',
   CXP = 'cxp',
   REPORTS = 'reports',
@@ -41,6 +42,7 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
+  category: string;
   priceUSD: number;
   costUSD: number;
   stock: number;
@@ -64,6 +66,13 @@ export interface Supplier {
   phone: string;
 }
 
+export interface Seller {
+  id: string;
+  name: string;
+  phone: string;
+  status: 'active' | 'inactive';
+}
+
 export interface SaleItem {
   productId: string;
   name: string;
@@ -76,6 +85,8 @@ export interface Sale {
   date: string;
   customerId: string;
   customerName: string;
+  sellerId?: string;
+  sellerName?: string;
   customerAddress?: string;
   items: SaleItem[];
   totalUSD: number;
