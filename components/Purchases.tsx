@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, ShoppingCart, Truck, Search, Trash2, ArrowLeft, CheckCircle2, PlusCircle, Edit3, Loader2, UserPlus } from 'lucide-react';
+import { Plus, ShoppingCart, Truck, Search, Trash2, ArrowLeft, CheckCircle2, PlusCircle, Edit3, Loader2, UserPlus, Box } from 'lucide-react';
 import { Purchase, Supplier, Product, AppSettings, PurchaseItem } from '../types';
 import { dbService } from '../db';
 
@@ -17,6 +17,8 @@ interface Props {
   settings: AppSettings;
 }
 
+const CATEGORIES = ['Víveres', 'Charcutería', 'Lácteos', 'Limpieza', 'Bebidas', 'Snacks', 'Otros'];
+
 const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSuppliers, products, setProducts, settings }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -28,7 +30,6 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
   const [isSaving, setIsSaving] = useState(false);
   
   const [isCredit, setIsCredit] = useState(false);
-  const [isDiscount, setIsDiscount] = useState(false);
   const [discountVal, setDiscountVal] = useState(0);
   const [initialPayment, setInitialPayment] = useState(0);
 
@@ -45,10 +46,12 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.quantity * item.costUSD), 0);
-  const finalTotal = subtotal - (isDiscount ? discountVal : 0);
+  const finalTotal = Math.max(0, subtotal - discountVal);
+  const paidAmount = isCredit ? Math.min(initialPayment, finalTotal) : finalTotal;
 
   const finishPurchase = async () => {
-    if (!selectedSupplierId || cart.length === 0) return alert('Complete los datos');
+    if (!selectedSupplierId) return alert('Seleccione un proveedor');
+    if (cart.length === 0) return alert('Agregue al menos un producto');
     setIsSaving(true);
     try {
       const supplier = suppliers.find(s => s.id === selectedSupplierId);
@@ -62,10 +65,10 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
         totalUSD: finalTotal,
         totalBS: finalTotal * settings.exchangeRate,
         exchangeRate: settings.exchangeRate,
-        status: isCredit ? 'pending' : 'paid',
-        discountUSD: isDiscount ? discountVal : 0,
-        initialPaymentUSD: isCredit ? initialPayment : finalTotal,
-        paidAmountUSD: isCredit ? initialPayment : finalTotal
+        status: (isCredit && paidAmount < finalTotal) ? 'pending' : 'paid',
+        discountUSD: discountVal > 0 ? discountVal : 0,
+        initialPaymentUSD: isCredit ? paidAmount : finalTotal,
+        paidAmountUSD: paidAmount
       };
 
       const updatedProducts = [...products];
@@ -94,8 +97,11 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
       setEditingPurchase(null);
       setCart([]);
       setSelectedSupplierId('');
+      setIsCredit(false);
+      setDiscountVal(0);
+      setInitialPayment(0);
     } catch (err) {
-      alert("❌ ERROR AL PROCESAR COMPRA:\n\nNo se pudo conectar con el servidor de base de datos.");
+      alert("❌ ERROR AL PROCESAR COMPRA:\n\nNo se pudo guardar la compra en la base de datos.");
     } finally {
       setIsSaving(false);
     }
@@ -108,7 +114,6 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
        const prod = products.find(x => x.id === i.productId);
        return { ...i, newSalePriceUSD: prod?.priceUSD || i.costUSD * 1.3 };
     }));
-    setIsDiscount((p.discountUSD || 0) > 0);
     setDiscountVal(p.discountUSD || 0);
     setIsCredit(p.status === 'pending');
     setInitialPayment(p.initialPaymentUSD || 0);
@@ -121,25 +126,42 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
         <div className="flex justify-between items-center">
           <div>
              <h1 className="text-2xl font-black uppercase text-white">Compras</h1>
-             <p className="text-slate-400 text-sm">Carga de mercancía y costos</p>
+             <p className="text-slate-400 text-xs">Carga de mercancía y costos</p>
           </div>
-          <button onClick={() => { setEditingPurchase(null); setIsRegisterMode(true); }} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-4 px-8 rounded-2xl flex items-center gap-2 shadow-lg active:scale-95 transition-all text-xs">
-            <Plus size={24} /> NUEVA COMPRA
+          <button onClick={() => {
+            setEditingPurchase(null);
+            setSelectedSupplierId('');
+            setCart([]);
+            setIsCredit(false);
+            setDiscountVal(0);
+            setInitialPayment(0);
+            setIsRegisterMode(true);
+          }} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-4 px-8 rounded-2xl flex items-center gap-2 shadow-lg active:scale-95 transition-all text-xs">
+            <Plus size={20} /> NUEVA COMPRA
           </button>
         </div>
         <div className="grid grid-cols-1 gap-4">
            {purchases.map(p => (
-             <div key={p.id} className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+             <div key={p.id} className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-500 transition-colors">
                 <div className="flex items-center gap-4 flex-1">
-                   <div className="p-4 bg-slate-800 rounded-2xl text-orange-500"><Truck size={28} /></div>
+                   <div className={`p-4 rounded-2xl ${p.status === 'pending' ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                     <Truck size={28} />
+                   </div>
                    <div>
-                      <p className="font-bold text-lg text-white leading-tight uppercase">{p.supplierName}</p>
-                      <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{new Date(p.date).toLocaleString()}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-lg text-white leading-tight uppercase">{p.supplierName}</p>
+                        {p.status === 'pending' && (
+                          <span className="text-[8px] font-black uppercase bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full border border-amber-500/30">
+                            Pendiente / CXP
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{new Date(p.date).toLocaleString('es-VE')}</p>
                    </div>
                 </div>
                 <div className="text-right px-8">
                    <p className="text-2xl font-black text-white leading-none">${p.totalUSD.toFixed(2)}</p>
-                   <p className="text-xs font-bold text-orange-500 mt-1">{(p.totalUSD * settings.exchangeRate).toLocaleString()} Bs</p>
+                   <p className="text-xs font-bold text-orange-500 mt-1">{(p.totalUSD * (p.exchangeRate || settings.exchangeRate)).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs</p>
                 </div>
                 <button onClick={() => handleEdit(p)} className="p-3 bg-slate-800 rounded-xl text-slate-400 hover:text-white"><Edit3 size={18}/></button>
              </div>
@@ -155,7 +177,7 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
         <div className="p-6 border-b border-slate-700 bg-[#1e293b] flex justify-between items-center sticky top-0 z-[130]">
            <div className="flex items-center gap-4">
               <button onClick={() => setIsRegisterMode(false)} className="p-2 hover:bg-slate-700 rounded-full text-white"><ArrowLeft size={28}/></button>
-              <h2 className="text-xl font-black uppercase text-white">Carga de Inventario</h2>
+              <h2 className="text-xl font-black uppercase text-white">Carga de Inventario (Entrada de Mercancía)</h2>
            </div>
         </div>
 
@@ -168,38 +190,65 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
                        <option value="">ELIJA PROVEEDOR...</option>
                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
-                    <button onClick={() => setIsSupplierModalOpen(true)} className="p-4 bg-orange-500/10 text-orange-500 rounded-2xl border border-orange-500/20"><UserPlus size={24} /></button>
+                    <button onClick={() => setIsSupplierModalOpen(true)} className="p-4 bg-orange-500/10 text-orange-500 rounded-2xl border border-orange-500/20 hover:bg-orange-500/20"><UserPlus size={24} /></button>
                  </div>
               </div>
               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Producto</label>
+                 <label className="text-[10px] font-black text-slate-500 uppercase ml-2 tracking-widest">Agregar Producto</label>
                  <div className="flex gap-2">
                     <div className="relative flex-1">
                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                       <input type="text" placeholder="Buscar..." className="w-full bg-[#0f172a] border border-slate-700 rounded-2xl p-4 pl-12 font-bold text-white outline-none" value={productSearch} onChange={(e) => {
+                       <input type="text" placeholder="Buscar por código o nombre..." className="w-full bg-[#0f172a] border border-slate-700 rounded-2xl p-4 pl-12 font-bold text-white outline-none focus:border-orange-500" value={productSearch} onChange={(e) => {
                           setProductSearch(e.target.value);
                           const f = products.find(x => x.name.toLowerCase() === e.target.value.toLowerCase() || x.sku === e.target.value);
                           if (f) addToCart(f);
                        }} list="products-list-purch-final" />
                        <datalist id="products-list-purch-final">{products.map(p => <option key={p.id} value={p.name}>{p.sku}</option>)}</datalist>
                     </div>
-                    <button onClick={() => setIsProductModalOpen(true)} className="p-4 bg-emerald-500/10 text-emerald-500 rounded-2xl border border-emerald-500/20"><PlusCircle size={24} /></button>
+                    <button onClick={() => setIsProductModalOpen(true)} className="p-4 bg-emerald-500/10 text-emerald-500 rounded-2xl border border-emerald-500/20 hover:bg-emerald-500/20"><PlusCircle size={24} /></button>
                  </div>
               </div>
            </div>
 
-           <div className="space-y-4">
-              {cart.map(item => (
-                <div key={item.productId} className="bg-[#1e293b] p-6 rounded-[2rem] border border-slate-700 flex flex-col md:flex-row gap-6 items-center">
-                   <div className="flex-1 w-full"><h4 className="font-black text-white text-sm uppercase">{item.name}</h4></div>
-                   <div className="grid grid-cols-3 gap-3 w-full md:w-[450px]">
-                      <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">Cant</label><input type="number" value={item.quantity} onChange={(e) => updateCartItem(item.productId, 'quantity', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-orange-500"/></div>
-                      <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">Costo $</label><input type="number" value={item.costUSD} onChange={(e) => updateCartItem(item.productId, 'costUSD', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-white"/></div>
-                      <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">PVP $</label><input type="number" value={item.newSalePriceUSD} onChange={(e) => updateCartItem(item.productId, 'newSalePriceUSD', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-emerald-500"/></div>
-                   </div>
-                   <button onClick={() => updateCartItem(item.productId, 'quantity', 0)} className="text-rose-500 p-2"><Trash2 size={20}/></button>
+           {/* Purchase Terms (Credit / Discount) */}
+           <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-center gap-3 bg-[#0f172a] p-4 rounded-2xl border border-slate-700/50">
+                 <input type="checkbox" id="purchCreditCheck" checked={isCredit} onChange={(e) => setIsCredit(e.target.checked)} className="w-5 h-5 accent-orange-500 rounded cursor-pointer" />
+                 <label htmlFor="purchCreditCheck" className="text-xs font-black uppercase text-slate-300 cursor-pointer">Compra a Crédito (CXP)</label>
+              </div>
+
+              {isCredit && (
+                <div className="space-y-1 bg-[#0f172a] p-3 rounded-2xl border border-slate-700/50">
+                   <label className="text-[8px] font-black text-slate-500 uppercase ml-2">Abono Inicial (USD)</label>
+                   <input type="number" step="0.01" value={initialPayment} onChange={(e) => setInitialPayment(parseFloat(e.target.value) || 0)} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl p-2 text-xs font-black text-amber-400 outline-none" />
                 </div>
-              ))}
+              )}
+
+              <div className="space-y-1 bg-[#0f172a] p-3 rounded-2xl border border-slate-700/50">
+                 <label className="text-[8px] font-black text-slate-500 uppercase ml-2">Descuento Recibido (USD)</label>
+                 <input type="number" step="0.01" value={discountVal} onChange={(e) => setDiscountVal(parseFloat(e.target.value) || 0)} className="w-full bg-[#1e293b] border border-slate-700 rounded-xl p-2 text-xs font-black text-emerald-400 outline-none" />
+              </div>
+           </div>
+
+           {/* Cart Items */}
+           <div className="space-y-4">
+              {cart.length === 0 ? (
+                <div className="bg-[#1e293b] p-12 rounded-[2.5rem] border border-dashed border-slate-700 text-center">
+                   <p className="text-xs font-black uppercase text-slate-500">Ningún producto en la lista de compras</p>
+                </div>
+              ) : (
+                cart.map(item => (
+                  <div key={item.productId} className="bg-[#1e293b] p-6 rounded-[2rem] border border-slate-700 flex flex-col md:flex-row gap-6 items-center">
+                     <div className="flex-1 w-full"><h4 className="font-black text-white text-sm uppercase">{item.name}</h4></div>
+                     <div className="grid grid-cols-3 gap-3 w-full md:w-[450px]">
+                        <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">Cant Comprada</label><input type="number" step="any" value={item.quantity} onChange={(e) => updateCartItem(item.productId, 'quantity', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-orange-500"/></div>
+                        <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">Costo Unit ($)</label><input type="number" step="0.01" value={item.costUSD} onChange={(e) => updateCartItem(item.productId, 'costUSD', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-white"/></div>
+                        <div><label className="text-[8px] font-black text-slate-500 uppercase block text-center">Nuevo PVP ($)</label><input type="number" step="0.01" value={item.newSalePriceUSD} onChange={(e) => updateCartItem(item.productId, 'newSalePriceUSD', parseFloat(e.target.value) || 0)} className="w-full bg-[#0f172a] border border-slate-700 rounded-xl p-3 text-center text-xs font-black text-emerald-500"/></div>
+                     </div>
+                     <button onClick={() => updateCartItem(item.productId, 'quantity', 0)} className="text-rose-500 p-2 hover:bg-rose-500/10 rounded-xl"><Trash2 size={20}/></button>
+                  </div>
+                ))
+              )}
            </div>
         </div>
       </div>
@@ -215,6 +264,7 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
          </button>
       </div>
 
+      {/* Supplier creation modal */}
       {isSupplierModalOpen && (
         <div className="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4">
            <div className="bg-[#1e293b] w-full max-w-md rounded-[3rem] p-10 border border-slate-700">
@@ -224,20 +274,70 @@ const Purchases: React.FC<Props> = ({ purchases, setPurchases, suppliers, setSup
                  setIsSaving(true);
                  try {
                    const fd = new FormData(e.currentTarget);
-                   const s = { id: crypto.randomUUID(), name: fd.get('name') as string, rif: fd.get('rif') as string, phone: fd.get('phone') as string };
+                   const s = { id: crypto.randomUUID(), name: fd.get('name') as string, rif: fd.get('rif') as string || '', phone: fd.get('phone') as string || '' };
                    await dbService.put('suppliers', s);
                    setSuppliers(prev => [...prev, s]);
                    setSelectedSupplierId(s.id);
                    setIsSupplierModalOpen(false);
                  } catch (err) { alert("Error al guardar proveedor"); } finally { setIsSaving(false); }
               }} className="space-y-4">
-                 <input name="name" placeholder="Razón Comercial" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-white" required />
-                 <input name="rif" placeholder="RIF" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-white" />
-                 <input name="phone" placeholder="WhatsApp" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-white" />
+                 <input name="name" placeholder="Razón Comercial / Nombre" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" required />
+                 <input name="rif" placeholder="RIF / Identificación Fiscal" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" />
+                 <input name="phone" placeholder="Teléfono de Contacto" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" />
                  <div className="flex gap-4 pt-4">
                    <button type="button" onClick={() => setIsSupplierModalOpen(false)} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Cerrar</button>
                    <button type="submit" disabled={isSaving} className="flex-1 bg-orange-500 text-white py-4 rounded-2xl font-black uppercase text-[10px]">
-                     {isSaving ? '...' : 'Guardar'}
+                     {isSaving ? 'Guardando...' : 'Guardar'}
+                   </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* Product creation modal */}
+      {isProductModalOpen && (
+        <div className="fixed inset-0 bg-black/95 z-[300] flex items-center justify-center p-4">
+           <div className="bg-[#1e293b] w-full max-w-md rounded-[3rem] p-10 border border-slate-700">
+              <h3 className="text-xl font-black text-emerald-500 mb-6 uppercase flex items-center gap-2">
+                <Box size={20} /> Nuevo Producto
+              </h3>
+              <form onSubmit={async (e) => {
+                 e.preventDefault();
+                 setIsSaving(true);
+                 try {
+                   const fd = new FormData(e.currentTarget);
+                   const newP: Product = {
+                     id: crypto.randomUUID(),
+                     name: fd.get('name') as string,
+                     sku: fd.get('sku') as string,
+                     category: fd.get('category') as string || 'Otros',
+                     priceUSD: parseFloat(fd.get('priceUSD') as string) || 0,
+                     costUSD: parseFloat(fd.get('costUSD') as string) || 0,
+                     stock: 0,
+                     minStock: parseFloat(fd.get('minStock') as string) || 5,
+                   };
+                   await dbService.put('products', newP);
+                   setProducts(prev => [...prev, newP]);
+                   addToCart(newP);
+                   setIsProductModalOpen(false);
+                 } catch (err) { alert("Error al crear producto"); } finally { setIsSaving(false); }
+              }} className="space-y-4">
+                 <input name="name" placeholder="Descripción del producto" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" required />
+                 <div className="grid grid-cols-2 gap-3">
+                   <input name="sku" placeholder="SKU / Código" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" required />
+                   <select name="category" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none">
+                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                   </select>
+                 </div>
+                 <div className="grid grid-cols-2 gap-3">
+                   <input name="costUSD" type="number" step="0.01" placeholder="Costo ($)" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-white outline-none" required />
+                   <input name="priceUSD" type="number" step="0.01" placeholder="PVP ($)" className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl p-4 text-xs font-bold text-emerald-400 outline-none" required />
+                 </div>
+                 <div className="flex gap-4 pt-4">
+                   <button type="button" onClick={() => setIsProductModalOpen(false)} className="flex-1 font-black text-slate-500 uppercase text-[10px]">Cerrar</button>
+                   <button type="submit" disabled={isSaving} className="flex-1 bg-emerald-500 text-white py-4 rounded-2xl font-black uppercase text-[10px]">
+                     {isSaving ? 'Guardando...' : 'Crear Producto'}
                    </button>
                  </div>
               </form>
